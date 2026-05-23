@@ -28,14 +28,23 @@ sensor.justeat_tracking:
     icon: mdi:moped
 ```
 
-## Frontend: banner + tap-to-expand takeover
+## Frontend options
 
-The files in this directory are a self-contained banner+takeover UI for a custom
-tablet dashboard. They are NOT a Lovelace card — they assume you have a
-standalone HTML page that uses `haGet` to read sensor state.
+Three ways to render the sensor, from easiest to most custom:
 
-If you want a Lovelace card instead, the easiest approach is the
-[mushroom template card](https://github.com/piitaya/lovelace-mushroom):
+### 1. The bundled HACS card ★ recommended
+
+The repo ships with [`justeat-card.js`](../../justeat-card.js) — install via
+HACS, see [lovelace-card/README.md](../../lovelace-card/README.md).
+
+```yaml
+type: custom:justeat-card
+entity: sensor.justeat_tracking
+```
+
+### 2. Mushroom template card
+
+If you'd rather use [mushroom](https://github.com/piitaya/lovelace-mushroom):
 
 ```yaml
 type: custom:mushroom-template-card
@@ -95,13 +104,17 @@ visibility:
         message: "Re-login at just-eat.es and update data/state.json"
 ```
 
-## Frontend files (advanced)
+### 3. Custom standalone dashboard (advanced)
 
-The `justeat-live.js` + `justeat-live.css` in this directory implement the
-banner+takeover UI from the original deployment. They require:
+The `justeat-live.js` + `justeat-live.css` in this directory implement a
+self-contained banner + tap-to-expand takeover for custom HTML dashboards
+(not Lovelace). They require:
 
 - `haGet(entityId)` helper in your dashboard
 - DOM elements `#justeat-banner` and `#justeat-live`
 - Body class `je-banner-active` toggled when banner visible
+
+Use them as a reference if you're building a custom tablet dashboard. For
+standard Home Assistant usage, prefer option 1 (the HACS card).
 
 Use them as a reference, not a drop-in install.

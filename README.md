@@ -5,6 +5,10 @@ state to a Home Assistant sensor. Adaptive polling (10s when the rider is
 arriving, 600s in terminal states), rotating OAuth refresh tokens, atomic state
 persistence — runs on ~50MB RAM.
 
+Ships with a **HACS-compatible Lovelace card** ([`justeat-card.js`](justeat-card.js))
+that renders the sensor with progress bar, ETA, history, and auto-hides between
+orders. See [lovelace-card/README.md](lovelace-card/README.md).
+
 > **Unofficial.** Not affiliated with Just Eat Takeaway.com N.V. Uses the same
 > public API that the just-eat.es web app uses. Your tokens never leave your
 > network.
@@ -118,12 +122,32 @@ shape + sample Lovelace card + automations.
 
 All via environment variables (`.env`):
 
-| Variable      | Default                      | Description |
-| ------------- | ---------------------------- | ----------- |
-| `HA_URL`      | _(required)_                 | Home Assistant base URL, no trailing slash |
-| `HA_TOKEN`    | _(required)_                 | HA long-lived access token |
-| `SENSOR_ID`   | `sensor.justeat_tracking`    | Override sensor entity_id |
-| `STATE_PATH`  | `/data/state.json`           | Override state file location (inside container) |
+| Variable          | Default                      | Description |
+| ----------------- | ---------------------------- | ----------- |
+| `HA_URL`          | _(required)_                 | Home Assistant base URL, no trailing slash |
+| `HA_TOKEN`        | _(required)_                 | HA long-lived access token |
+| `SENSOR_ID`       | `sensor.justeat_tracking`    | Override sensor entity_id |
+| `COUNTRY`         | `es`                         | Market: `es`, `uk`, `ie`, `it`, `fr`, `dk`, `no`, `ch`, `at` (only `es` verified) |
+| `AUTH_HOST`       | derived from `COUNTRY`       | Override OAuth host (e.g. `auth.just-eat.co.uk`) |
+| `API_HOST`        | `i18n.api.just-eat.io`       | Override API host (shared across markets) |
+| `STOREFRONT_URL`  | derived from `AUTH_HOST`     | Override Origin/Referer (e.g. `https://www.just-eat.es`) |
+| `CLIENT_ID`       | `consumer_web_je`            | OAuth client_id (public web app client) |
+| `STATE_PATH`      | `/data/state.json`           | Override state file location (inside container) |
+
+### Multi-country usage
+
+For markets other than Spain, set `COUNTRY` to the market code. The auth host is
+auto-derived from the preset map. Example UK:
+
+```bash
+COUNTRY=uk
+```
+
+If your market is not in the preset map, or the derived `auth.just-eat.<tld>`
+host doesn't work, set `AUTH_HOST` and `STOREFRONT_URL` explicitly.
+
+If you successfully run the tracker in a market other than ES, please open a PR
+moving your market from "untested" to "verified" in `tracker.py`.
 
 ## Failure modes
 
@@ -146,11 +170,14 @@ All via environment variables (`.env`):
 ## Limitations / non-goals
 
 - Only one order tracked at a time (first active order returned).
-- Country-locked: defaults to Spain (`just-eat.es`). See
-  [docs/extract-refresh-token.md](docs/extract-refresh-token.md) for hints on
-  porting to other markets.
-- No PubNub WebSocket support yet (polling only). The Just Eat web app uses
-  PubNub for sub-second updates — a PR to switch to push-based would be welcome.
+- Markets other than Spain are untested but should follow the same OAuth +
+  REST pattern. Override `AUTH_HOST` if the preset doesn't match. See
+  [docs/extract-refresh-token.md](docs/extract-refresh-token.md) for the
+  extraction workflow.
+- No real-time WebSocket support yet (polling only). The Just Eat web app uses
+  AWS IoT MQTT-over-WebSocket for sub-second updates. See
+  [docs/realtime-mqtt-investigation.md](docs/realtime-mqtt-investigation.md) for
+  the auth-flow research and how to contribute the implementation.
 - No metrics endpoint. PRs welcome to add `/metrics` for Prometheus.
 
 ## License

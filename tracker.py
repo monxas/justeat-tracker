@@ -21,11 +21,35 @@ HA_URL = os.environ['HA_URL'].rstrip('/')
 HA_TOKEN = os.environ['HA_TOKEN']
 SENSOR_ID = os.environ.get('SENSOR_ID', 'sensor.justeat_tracking')
 
+# Country / region. Defaults to ES. Set COUNTRY=uk|it|fr|ie|... to override.
+# For markets not in the preset map, override AUTH_HOST too.
+COUNTRY = os.environ.get('COUNTRY', 'es').lower()
+
+# Known auth hosts per market. Only ES is verified; the rest follow the TLD
+# pattern but have NOT been tested. PRs welcome.
+_AUTH_HOSTS = {
+    'es': 'auth.just-eat.es',
+    'uk': 'auth.just-eat.co.uk',
+    'ie': 'auth.just-eat.ie',
+    'it': 'auth.just-eat.it',
+    'fr': 'auth.just-eat.fr',
+    'dk': 'auth.just-eat.dk',
+    'no': 'auth.just-eat.no',
+    'ch': 'auth.just-eat.ch',
+    'at': 'auth.just-eat.at',
+}
+AUTH_HOST = os.environ.get('AUTH_HOST') or _AUTH_HOSTS.get(COUNTRY, _AUTH_HOSTS['es'])
+API_HOST = os.environ.get('API_HOST', 'i18n.api.just-eat.io')
+
+# Storefront URL used for CORS-checked Origin/Referer headers. Derived from AUTH_HOST
+# unless explicitly overridden — auth.just-eat.X → www.just-eat.X.
+STOREFRONT_URL = os.environ.get('STOREFRONT_URL') or 'https://' + AUTH_HOST.replace('auth.', 'www.')
+
 # ── Just Eat constants ──
-CLIENT_ID = 'consumer_web_je'
-TOKEN_URL = 'https://auth.just-eat.es/connect/token'
-STATUS_URL_TMPL = 'https://i18n.api.just-eat.io/consumer/me/orders/es/{order_id}/status'
-ORDERS_URL = 'https://i18n.api.just-eat.io/consumer/me/orders/es?status=active'
+CLIENT_ID = os.environ.get('CLIENT_ID', 'consumer_web_je')
+TOKEN_URL = f'https://{AUTH_HOST}/connect/token'
+STATUS_URL_TMPL = f'https://{API_HOST}/consumer/me/orders/{COUNTRY}/{{order_id}}/status'
+ORDERS_URL = f'https://{API_HOST}/consumer/me/orders/{COUNTRY}?status=active'
 
 # ── Polling intervals (seconds) per status ──
 POLL_INTERVALS = {
@@ -101,8 +125,8 @@ def refresh_access_token(refresh_tok):
     try:
         st, body_text = http('POST', TOKEN_URL, headers={
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Origin': 'https://www.just-eat.es',
-            'Referer': 'https://www.just-eat.es/',
+            'Origin': STOREFRONT_URL,
+            'Referer': STOREFRONT_URL + '/',
         }, data=body)
     except error.HTTPError as e:
         log.error('Refresh HTTP %d: %s', e.code, e.read().decode('utf-8', errors='replace')[:200])
@@ -160,7 +184,7 @@ def _je_headers(access_tok):
         'Authorization': f'Bearer {access_tok}',
         'Accept': 'application/json',
         'Accept-Version': '2019-05',
-        'Origin': 'https://www.just-eat.es',
+        'Origin': STOREFRONT_URL,
         'X-Jet-Application': 'OneWeb',
     }
 
@@ -254,7 +278,8 @@ def push_to_ha(state_value, attributes):
 
 # ── Main loop ──
 def main():
-    log.info('Just Eat tracker starting — sensor=%s, HA=%s', SENSOR_ID, HA_URL)
+    log.info('Just Eat tracker starting — country=%s auth=%s api=%s sensor=%s HA=%s',
+             COUNTRY, AUTH_HOST, API_HOST, SENSOR_ID, HA_URL)
     state = load_state()
     if 'refresh_token' not in state:
         log.error('FATAL: no refresh_token in %s. Initialize before starting.', STATE_PATH)
