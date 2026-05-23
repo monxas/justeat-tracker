@@ -1,0 +1,277 @@
+/* ── Just Eat live takeover ── */
+
+#justeat-live {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a0e0a 60%, #2d1408 100%);
+  color: rgba(255,255,255,0.95);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  display: none;  /* shown via JS */
+}
+
+#justeat-live .je-takeover-inner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  box-sizing: border-box;
+  gap: 18px;
+}
+
+#justeat-live .je-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: absolute;
+  top: 28px;
+  left: 28px;
+}
+#justeat-live .je-brand-orange {
+  width: 14px; height: 14px;
+  background: #ff8000;
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(255,128,0,0.6);
+  animation: je-pulse 1.6s ease-in-out infinite;
+}
+@keyframes je-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.3); opacity: 0.7; } }
+#justeat-live .je-brand-label {
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #ff8000;
+}
+
+#justeat-live .je-status-bigicon {
+  font-size: 6rem;
+  line-height: 1;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 4px 20px rgba(255,128,0,0.3));
+}
+
+#justeat-live .je-status-label {
+  font-size: 2rem;
+  font-weight: 800;
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+#justeat-live .je-restaurant {
+  font-size: 1.2rem;
+  opacity: 0.65;
+  margin-bottom: 10px;
+}
+
+#justeat-live .je-progress {
+  width: 80%;
+  max-width: 600px;
+}
+#justeat-live .je-progress-bar {
+  height: 8px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+#justeat-live .je-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff8000, #ffa726);
+  border-radius: 4px;
+  transition: width 0.6s ease-out;
+  box-shadow: 0 0 12px rgba(255,128,0,0.5);
+}
+#justeat-live .je-progress-stages {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+#justeat-live .je-stage {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  transition: background 0.4s;
+}
+#justeat-live .je-stage.reached {
+  background: #ff8000;
+  box-shadow: 0 0 8px rgba(255,128,0,0.6);
+}
+
+#justeat-live .je-eta-row {
+  display: flex;
+  gap: 32px;
+  margin-top: 8px;
+}
+#justeat-live .je-eta-block {
+  text-align: center;
+}
+#justeat-live .je-eta-label {
+  font-size: 0.7rem;
+  letter-spacing: 2px;
+  opacity: 0.5;
+  text-transform: uppercase;
+}
+#justeat-live .je-eta-time {
+  font-size: 2.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #ffa726;
+  margin: 2px 0;
+}
+#justeat-live .je-eta-sub {
+  font-size: 0.8rem;
+  opacity: 0.55;
+}
+
+#justeat-live .je-history {
+  width: 80%;
+  max-width: 600px;
+  margin-top: 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 12px;
+  padding: 14px 18px;
+}
+#justeat-live .je-history-title {
+  font-size: 0.7rem;
+  letter-spacing: 1.5px;
+  opacity: 0.5;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+#justeat-live .je-history-row {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 0.9rem;
+}
+#justeat-live .je-history-time {
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+}
+#justeat-live .je-history-label {
+  flex: 1;
+}
+
+#justeat-live .je-done-stamp {
+  margin-top: 10px;
+  font-size: 1rem;
+  color: #66bb6a;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+/* ── Multi-takeover split (50/50 vertical) ── */
+body.multi-takeover #justeat-live,
+body.multi-takeover #f1-live,
+body.multi-takeover #now-playing {
+  width: 50%;
+}
+body.multi-takeover #f1-live { left: 0; right: 50%; }
+body.multi-takeover #justeat-live { left: 50%; right: 0; }
+body.multi-takeover #now-playing { left: 0; right: 50%; }
+
+/* When split, scale down content */
+body.multi-takeover #justeat-live .je-status-bigicon { font-size: 4rem; }
+body.multi-takeover #justeat-live .je-status-label { font-size: 1.4rem; }
+body.multi-takeover #justeat-live .je-restaurant { font-size: 1rem; }
+body.multi-takeover #justeat-live .je-eta-time { font-size: 1.8rem; }
+body.multi-takeover #justeat-live .je-takeover-inner { padding: 24px; gap: 12px; }
+body.multi-takeover #justeat-live .je-history { padding: 10px 12px; max-width: 100%; width: 90%; }
+
+/* ── Banner (mini-strip arriba, siempre visible cuando hay pedido activo) ── */
+#justeat-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 200;  /* ABOVE takeovers */
+  background: linear-gradient(180deg, rgba(255,128,0,0.95) 0%, rgba(230,108,0,0.95) 100%);
+  color: #1a0a00;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+  cursor: pointer;
+  user-select: none;
+  display: none;  /* shown via JS */
+}
+#justeat-banner .je-banner-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 22px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+#justeat-banner .je-banner-brand {
+  font-weight: 900;
+  letter-spacing: 2px;
+  font-size: 0.85rem;
+  background: rgba(0,0,0,0.18);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+#justeat-banner .je-banner-icon { font-size: 1.6rem; line-height: 1; }
+#justeat-banner .je-banner-status { font-weight: 800; }
+#justeat-banner .je-banner-restaurant { opacity: 0.7; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#justeat-banner .je-banner-eta { font-variant-numeric: tabular-nums; font-weight: 700; }
+#justeat-banner .je-banner-expand {
+  font-size: 1.4rem;
+  opacity: 0.6;
+  padding-left: 8px;
+}
+#justeat-banner .je-banner-progress {
+  height: 3px;
+  background: rgba(0,0,0,0.15);
+  overflow: hidden;
+}
+#justeat-banner .je-banner-progress-fill {
+  height: 100%;
+  background: rgba(0,0,0,0.55);
+  transition: width 0.6s ease-out;
+}
+
+/* When banner visible, nudge takeovers / view-wrapper down slightly */
+body.je-banner-active #now-playing,
+body.je-banner-active #f1-live { top: 56px; }
+body.je-banner-active #views-wrapper { padding-top: 56px; }
+
+/* Close button on expanded view */
+#justeat-live .je-close-btn {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,128,0,0.35);
+  color: #ffa726;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  z-index: 5;
+}
+#justeat-live .je-close-btn:active { background: rgba(255,128,0,0.2); }
+
+/* ── Failed/Cancelled variants ── */
+#justeat-banner .je-banner-row.je-failed {
+  background: linear-gradient(180deg, rgba(180,30,30,0.95), rgba(140,15,15,0.95));
+  color: #fff;
+}
+#justeat-banner .je-banner-progress-fill.je-failed {
+  background: rgba(255,255,255,0.6);
+}
+#justeat-live .je-progress-fill.je-failed {
+  background: linear-gradient(90deg, #c62828, #e57373);
+  box-shadow: 0 0 12px rgba(198,40,40,0.5);
+}
+#justeat-live .je-takeover-inner.je-failed {
+  background: linear-gradient(135deg, #0a0a0a 0%, #1f0a0a 60%, #3a0c0c 100%);
+}
+#justeat-live .je-done-stamp.je-failed-stamp {
+  color: #ef5350;
+}
+
+/* Make banner skip the broken-style on regular state (override safety) */
+#justeat-banner .je-banner-row:not(.je-failed) {
+  background: transparent;
+  color: #1a0a00;
+}

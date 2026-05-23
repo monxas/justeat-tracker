@@ -1,0 +1,17 @@
+services:
+  justeat-tracker:
+    build: .
+    image: justeat-tracker:latest
+    container_name: justeat-tracker
+    restart: unless-stopped
+    environment:
+      - HA_URL=${HA_URL}
+      - HA_TOKEN=${HA_TOKEN}
+      - SENSOR_ID=${SENSOR_ID:-sensor.justeat_tracking}
+    volumes:
+      - ./data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

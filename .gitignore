@@ -1,0 +1,8 @@
+.env
+data/state.json
+data/state.json.tmp
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+.idea/
