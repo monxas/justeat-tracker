@@ -8,9 +8,10 @@ state to a Home Assistant sensor via REST API.
 State is persisted in /data/state.json (refresh_token rotates — must survive
 container restart). Logs to stdout (json-file driver picks up).
 """
-import json, time, os, sys, logging, signal
+import json, time, os, sys, logging, signal, threading
 from datetime import datetime, timezone
 from urllib import request, parse, error
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger('je')
@@ -25,6 +26,38 @@ SENSOR_ID = os.environ.get('SENSOR_ID', 'sensor.justeat_tracking')
 # Set BINARY_SENSOR_ID='' to disable.
 BINARY_SENSOR_ID = os.environ.get('BINARY_SENSOR_ID', 'binary_sensor.justeat_order_active')
 TERMINAL_GRACE_SECONDS = int(os.environ.get('TERMINAL_GRACE_SECONDS', '600'))
+
+# Prometheus /metrics HTTP server. Set METRICS_PORT='' (or 0) to disable.
+METRICS_PORT = int(os.environ.get('METRICS_PORT', '9100') or 0)
+
+# ── Prometheus metrics (in-memory counters/gauges) ──
+_metrics = {
+    'refresh_total': 0,
+    'refresh_failed_total': 0,
+    'orders_fetch_total': 0,
+    'orders_fetch_failed_total': 0,
+    'status_fetch_total': 0,
+    'status_fetch_failed_total': 0,
+    'push_total': 0,
+    'push_failed_total': 0,
+    'loop_iterations_total': 0,
+    'loop_errors_total': 0,
+    'last_status_change_at': 0,        # unix ts of last state.status change
+    'token_expires_at': 0,             # unix ts
+    'last_push_at': 0,                 # unix ts
+    'order_active': 0,                 # 0/1
+    'consecutive_failures': 0,
+}
+_metrics_lock = threading.Lock()
+_last_status_value = None
+
+def _metric_inc(name, n=1):
+    with _metrics_lock:
+        _metrics[name] = _metrics.get(name, 0) + n
+
+def _metric_set(name, v):
+    with _metrics_lock:
+        _metrics[name] = v
 
 # Country / region. Defaults to ES. Set COUNTRY=uk|it|fr|ie|... to override.
 # For markets not in the preset map, override AUTH_HOST too.
@@ -122,6 +155,7 @@ def http(method, url, headers=None, data=None, timeout=15):
 
 # ── OAuth refresh ──
 def refresh_access_token(refresh_tok):
+    _metric_inc('refresh_total')
     body = parse.urlencode({
         'grant_type': 'refresh_token',
         'refresh_token': refresh_tok,
@@ -135,25 +169,32 @@ def refresh_access_token(refresh_tok):
         }, data=body)
     except error.HTTPError as e:
         log.error('Refresh HTTP %d: %s', e.code, e.read().decode('utf-8', errors='replace')[:200])
+        _metric_inc('refresh_failed_total')
         return None
     except Exception as e:
         log.error('Refresh network error: %s', e)
+        _metric_inc('refresh_failed_total')
         return None
     if st != 200:
         log.error('Refresh non-200: %d', st)
+        _metric_inc('refresh_failed_total')
         return None
     try:
         d = json.loads(body_text)
     except json.JSONDecodeError:
         log.error('Refresh response not JSON: %s', body_text[:200])
+        _metric_inc('refresh_failed_total')
         return None
     if 'access_token' not in d or 'refresh_token' not in d:
         log.error('Refresh response missing tokens: keys=%s', list(d.keys()))
+        _metric_inc('refresh_failed_total')
         return None
+    expires_at = int(time.time()) + int(d.get('expires_in', 3600))
+    _metric_set('token_expires_at', expires_at)
     return {
         'access_token': d['access_token'],
         'refresh_token': d['refresh_token'],
-        'expires_at': int(time.time()) + int(d.get('expires_in', 3600)),
+        'expires_at': expires_at,
     }
 
 
@@ -195,12 +236,15 @@ def _je_headers(access_tok):
 
 def fetch_active_order(access_tok):
     """Return (order_id, http_status). order_id=None if no active orders."""
+    _metric_inc('orders_fetch_total')
     try:
         st, body = http('GET', ORDERS_URL, headers=_je_headers(access_tok))
     except error.HTTPError as e:
+        _metric_inc('orders_fetch_failed_total')
         return None, e.code
     except Exception as e:
         log.warning('orders list network error: %s', e)
+        _metric_inc('orders_fetch_failed_total')
         return None, 0
     try:
         d = json.loads(body)
@@ -216,12 +260,15 @@ def fetch_active_order(access_tok):
 
 def fetch_order_status(access_tok, order_id):
     """Return (raw_dict, http_status). raw_dict=None on error."""
+    _metric_inc('status_fetch_total')
     try:
         st, body = http('GET', STATUS_URL_TMPL.format(order_id=order_id), headers=_je_headers(access_tok))
     except error.HTTPError as e:
+        _metric_inc('status_fetch_failed_total')
         return None, e.code
     except Exception as e:
         log.warning('status network error: %s', e)
+        _metric_inc('status_fetch_failed_total')
         return None, 0
     try:
         return json.loads(body), st
@@ -311,12 +358,24 @@ def _is_order_active(attrs):
 
 def push_to_ha(state_value, attributes):
     """Push to BOTH sensor.justeat_tracking AND binary_sensor.justeat_order_active."""
+    global _last_status_value
     attrs = dict(attributes or {})
     attrs['lastPushAt'] = datetime.now(timezone.utc).isoformat()
     attrs.setdefault('friendly_name', 'Just Eat tracking')
     attrs.setdefault('icon', 'mdi:moped')
 
+    # Metric: detect status change (used by Prometheus rate())
+    cur_status = attrs.get('status') or state_value
+    if cur_status != _last_status_value:
+        _metric_set('last_status_change_at', int(time.time()))
+        _last_status_value = cur_status
+    _metric_set('last_push_at', int(time.time()))
+    _metric_set('order_active', 1 if _is_order_active(attrs) else 0)
+
     ok = _post_state(SENSOR_ID, state_value, attrs)
+    _metric_inc('push_total')
+    if not ok:
+        _metric_inc('push_failed_total')
 
     if BINARY_SENSOR_ID:
         active = _is_order_active(attrs)
@@ -339,6 +398,84 @@ def push_to_ha(state_value, attributes):
     return ok
 
 
+# ── Prometheus /metrics HTTP server ──
+def _render_metrics():
+    """Return Prometheus text format."""
+    with _metrics_lock:
+        snapshot = dict(_metrics)
+    lines = ['# HELP justeat_tracker_info Tracker info',
+             '# TYPE justeat_tracker_info gauge',
+             f'justeat_tracker_info{{country="{COUNTRY}",sensor="{SENSOR_ID}"}} 1']
+    # Counters
+    for name, help_text in [
+        ('refresh_total', 'OAuth refresh attempts'),
+        ('refresh_failed_total', 'OAuth refresh failures'),
+        ('orders_fetch_total', '/orders endpoint fetches'),
+        ('orders_fetch_failed_total', '/orders fetches that failed'),
+        ('status_fetch_total', '/status endpoint fetches'),
+        ('status_fetch_failed_total', '/status fetches that failed'),
+        ('push_total', 'HA push attempts'),
+        ('push_failed_total', 'HA pushes that failed'),
+        ('loop_iterations_total', 'Main loop iterations'),
+        ('loop_errors_total', 'Main loop exceptions'),
+    ]:
+        lines.append(f'# HELP justeat_tracker_{name} {help_text}')
+        lines.append(f'# TYPE justeat_tracker_{name} counter')
+        lines.append(f'justeat_tracker_{name} {snapshot.get(name, 0)}')
+    # Gauges
+    for name, help_text in [
+        ('last_status_change_at', 'Unix timestamp of last status change'),
+        ('token_expires_at', 'Unix timestamp when current AT expires'),
+        ('last_push_at', 'Unix timestamp of last HA push'),
+        ('order_active', 'Whether an order is active (0/1)'),
+        ('consecutive_failures', 'Consecutive iteration failures'),
+    ]:
+        lines.append(f'# HELP justeat_tracker_{name} {help_text}')
+        lines.append(f'# TYPE justeat_tracker_{name} gauge')
+        lines.append(f'justeat_tracker_{name} {snapshot.get(name, 0)}')
+    return '\n'.join(lines) + '\n'
+
+
+class _MetricsHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/metrics':
+            body = _render_metrics().encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == '/health':
+            with _metrics_lock:
+                last_push = _metrics.get('last_push_at', 0)
+            healthy = last_push > 0 and (time.time() - last_push) < 1800  # 30 min
+            body = b'ok\n' if healthy else b'stale\n'
+            self.send_response(200 if healthy else 503)
+            self.send_header('Content-Type', 'text/plain; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+    def log_message(self, fmt, *args):
+        # Silence default access log
+        pass
+
+
+def _start_metrics_server():
+    if not METRICS_PORT:
+        log.info('METRICS_PORT=0 — /metrics disabled')
+        return
+    try:
+        httpd = HTTPServer(('0.0.0.0', METRICS_PORT), _MetricsHandler)
+    except OSError as e:
+        log.error('Could not bind /metrics on :%d — %s', METRICS_PORT, e)
+        return
+    t = threading.Thread(target=httpd.serve_forever, daemon=True, name='metrics')
+    t.start()
+    log.info('Metrics server on :%d  → /metrics + /health', METRICS_PORT)
+
+
 # ── Main loop ──
 def main():
     log.info('Just Eat tracker starting — country=%s auth=%s api=%s sensor=%s HA=%s',
@@ -348,9 +485,17 @@ def main():
         log.error('FATAL: no refresh_token in %s. Initialize before starting.', STATE_PATH)
         sys.exit(1)
 
+    # Seed gauges from persisted state so /metrics is meaningful before first iteration
+    if state.get('expires_at'):
+        _metric_set('token_expires_at', state['expires_at'])
+
+    _start_metrics_server()
+
     consecutive_failures = 0
 
     while _running:
+        _metric_inc('loop_iterations_total')
+        _metric_set('consecutive_failures', consecutive_failures)
         delay = IDLE_POLL  # safe default
         try:
             at = ensure_token(state)
@@ -412,6 +557,7 @@ def main():
         except Exception as e:
             log.exception('loop error: %s', e)
             consecutive_failures += 1
+            _metric_inc('loop_errors_total')
             delay = min(60 * (2 ** min(consecutive_failures, 5)), 600)
 
         # Sleep in 1-sec chunks for fast shutdown

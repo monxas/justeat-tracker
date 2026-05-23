@@ -4,10 +4,15 @@ services:
     image: justeat-tracker:latest
     container_name: justeat-tracker
     restart: unless-stopped
+    ports:
+      # Host:Container — change host port if 9101 conflicts in your setup.
+      # (Container internal port stays 9100 regardless.)
+      - "${METRICS_HOST_PORT:-9101}:9100"
     environment:
       - HA_URL=${HA_URL}
       - HA_TOKEN=${HA_TOKEN}
       - SENSOR_ID=${SENSOR_ID:-sensor.justeat_tracking}
+      - METRICS_PORT=9100
     volumes:
       - ./data:/data
     logging:

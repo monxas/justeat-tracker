@@ -10,11 +10,12 @@ RUN chown -R tracker:tracker /app
 USER tracker
 ENV STATE_PATH=/data/state.json
 ENV PYTHONUNBUFFERED=1
+ENV METRICS_PORT=9100
 
-# Healthcheck: state.json parseable + expires_at populated
-HEALTHCHECK --interval=2m --timeout=10s --start-period=30s --retries=3 \
-  CMD test -f /data/state.json && \
-      python3 -c "import json,sys;d=json.load(open('/data/state.json'));sys.exit(0 if d.get('expires_at',0)>0 else 1)" \
-      || exit 1
+EXPOSE 9100
+
+# Healthcheck: hit /health (returns 200 if last HA push within 30 min)
+HEALTHCHECK --interval=2m --timeout=5s --start-period=30s --retries=3 \
+  CMD python3 -c "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9100/health',timeout=3).status==200 else 1)" || exit 1
 
 CMD ["python3", "tracker.py"]

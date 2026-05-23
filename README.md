@@ -134,6 +134,7 @@ All via environment variables (`.env`):
 | `API_HOST`        | `i18n.api.just-eat.io`       | Override API host (shared across markets) |
 | `STOREFRONT_URL`  | derived from `AUTH_HOST`     | Override Origin/Referer (e.g. `https://www.just-eat.es`) |
 | `CLIENT_ID`       | `consumer_web_je`            | OAuth client_id (public web app client) |
+| `METRICS_PORT`    | `9100`                       | Prometheus `/metrics` + `/health` port. Set to `0` to disable. |
 | `STATE_PATH`      | `/data/state.json`           | Override state file location (inside container) |
 
 ### Multi-country usage
@@ -150,6 +151,44 @@ host doesn't work, set `AUTH_HOST` and `STOREFRONT_URL` explicitly.
 
 If you successfully run the tracker in a market other than ES, please open a PR
 moving your market from "untested" to "verified" in `tracker.py`.
+
+## Metrics
+
+The container exposes Prometheus metrics on port `9100` (configurable via
+`METRICS_PORT`) plus a `/health` endpoint suitable for Docker healthchecks.
+
+```bash
+curl http://localhost:9100/metrics
+```
+
+Sample output:
+
+```
+# HELP justeat_tracker_refresh_total OAuth refresh attempts
+# TYPE justeat_tracker_refresh_total counter
+justeat_tracker_refresh_total 12
+# HELP justeat_tracker_push_total HA push attempts
+# TYPE justeat_tracker_push_total counter
+justeat_tracker_push_total 487
+# HELP justeat_tracker_order_active Whether an order is active (0/1)
+# TYPE justeat_tracker_order_active gauge
+justeat_tracker_order_active 0
+# HELP justeat_tracker_last_push_at Unix timestamp of last HA push
+# TYPE justeat_tracker_last_push_at gauge
+justeat_tracker_last_push_at 1779545987
+...
+```
+
+Drop-in Prometheus scrape config:
+
+```yaml
+- job_name: justeat-tracker
+  static_configs:
+    - targets: ['localhost:9100']
+```
+
+Useful alert: `time() - justeat_tracker_last_push_at > 1800` (no push in 30 min
+→ something is wrong).
 
 ## Failure modes
 
