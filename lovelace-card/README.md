@@ -78,6 +78,48 @@ cards:
   - # ...other cards
 ```
 
+## Conditional cards via `binary_sensor.justeat_order_active`
+
+The tracker also pushes a binary sensor that's `on` whenever there's an active
+or recently-terminal order. Use it for `type: conditional` wrappers:
+
+```yaml
+type: conditional
+conditions:
+  - entity: binary_sensor.justeat_order_active
+    state: "on"
+card:
+  type: custom:justeat-card
+  entity: sensor.justeat_tracking
+  hide_when_idle: false   # let the conditional handle hiding
+```
+
+Same idea in dashboard view filtering:
+
+```yaml
+views:
+  - title: Home
+    cards:
+      - type: entities
+        entities:
+          - sensor.living_room_temp
+          - sensor.outside_temp
+        # Show this entities card only when no order is active
+        visibility:
+          - condition: state
+            entity: binary_sensor.justeat_order_active
+            state: "off"
+      - type: custom:justeat-card
+        entity: sensor.justeat_tracking
+        visibility:
+          - condition: state
+            entity: binary_sensor.justeat_order_active
+            state: "on"
+```
+
+This binary sensor is also handy for automations that should only fire while
+an order is in flight (push notifications, screen wake-up, etc.).
+
 ## Troubleshooting
 
 - **Card says "Entity not found"** — the tracker hasn't pushed to HA yet. Check

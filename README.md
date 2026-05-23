@@ -127,6 +127,8 @@ All via environment variables (`.env`):
 | `HA_URL`          | _(required)_                 | Home Assistant base URL, no trailing slash |
 | `HA_TOKEN`        | _(required)_                 | HA long-lived access token |
 | `SENSOR_ID`       | `sensor.justeat_tracking`    | Override sensor entity_id |
+| `BINARY_SENSOR_ID`| `binary_sensor.justeat_order_active` | Pushed alongside main sensor; `on` when active. Set to empty to disable. |
+| `TERMINAL_GRACE_SECONDS` | `600`                | How long the binary sensor stays `on` after a terminal state |
 | `COUNTRY`         | `es`                         | Market: `es`, `uk`, `ie`, `it`, `fr`, `dk`, `no`, `ch`, `at` (only `es` verified) |
 | `AUTH_HOST`       | derived from `COUNTRY`       | Override OAuth host (e.g. `auth.just-eat.co.uk`) |
 | `API_HOST`        | `i18n.api.just-eat.io`       | Override API host (shared across markets) |

@@ -20,6 +20,11 @@ STATE_PATH = os.environ.get('STATE_PATH', '/data/state.json')
 HA_URL = os.environ['HA_URL'].rstrip('/')
 HA_TOKEN = os.environ['HA_TOKEN']
 SENSOR_ID = os.environ.get('SENSOR_ID', 'sensor.justeat_tracking')
+# Binary sensor flipped on whenever there's an active order (or a terminal order
+# seen <TERMINAL_GRACE_SECONDS ago, so the UI shows the final state briefly).
+# Set BINARY_SENSOR_ID='' to disable.
+BINARY_SENSOR_ID = os.environ.get('BINARY_SENSOR_ID', 'binary_sensor.justeat_order_active')
+TERMINAL_GRACE_SECONDS = int(os.environ.get('TERMINAL_GRACE_SECONDS', '600'))
 
 # Country / region. Defaults to ES. Set COUNTRY=uk|it|fr|ie|... to override.
 # For markets not in the preset map, override AUTH_HOST too.
@@ -232,48 +237,106 @@ def transform_status(raw):
     eta_str = None
     if eta_obj.get('start') is not None:
         eta_str = f"{eta_obj['start']}-{eta_obj['end']} min"
+    history = [
+        {'ts': h.get('timestamp'), 'value': h.get('value'),
+         'label': STATUS_LABELS.get(h.get('value'), h.get('value'))}
+        for h in s.get('history', [])
+    ]
+    # Pin down when the order transitioned to its terminal state.
+    # Use the FIRST history entry whose value is in TERMINAL_STATES.
+    # (Falls back to current wall clock if history is empty but we're terminal.)
+    terminal_since = None
+    if cur in TERMINAL_STATES:
+        for h in history:
+            if h['value'] in TERMINAL_STATES and h['ts']:
+                terminal_since = h['ts']
+                break
+        if not terminal_since:
+            terminal_since = datetime.now(timezone.utc).isoformat()
     return {
         'isActive': bool(s.get('isActive')),
         'status': cur,
         'statusLabel': STATUS_LABELS.get(cur, cur),
         'isTerminal': cur in TERMINAL_STATES,
+        'terminalSince': terminal_since,
         'restaurant': raw.get('restaurantName'),
         'orderId': raw.get('id'),
         'eta': eta_str,
         'dueDate': s.get('currentDueDate'),
-        'history': [
-            {'ts': h.get('timestamp'), 'value': h.get('value'),
-             'label': STATUS_LABELS.get(h.get('value'), h.get('value'))}
-            for h in s.get('history', [])
-        ],
+        'history': history,
         'upcoming': [u.get('value') for u in s.get('upcoming', [])],
         'fetchedAt': datetime.now(timezone.utc).isoformat(),
     }
 
 
 # ── HA push ──
-def push_to_ha(state_value, attributes):
-    """POST sensor state. attributes is the full data dict (or minimal if idle)."""
-    attrs = dict(attributes or {})
-    attrs['lastPushAt'] = datetime.now(timezone.utc).isoformat()
-    # HA shows nicely:
-    attrs.setdefault('friendly_name', 'Just Eat tracking')
-    attrs.setdefault('icon', 'mdi:moped')
+def _post_state(entity_id, state_value, attrs):
+    """Low-level POST to /api/states/{entity_id}. Returns True on 200/201."""
     payload = json.dumps({'state': state_value, 'attributes': attrs}).encode()
     try:
-        st, _ = http('POST', f'{HA_URL}/api/states/{SENSOR_ID}', headers={
+        st, _ = http('POST', f'{HA_URL}/api/states/{entity_id}', headers={
             'Authorization': f'Bearer {HA_TOKEN}',
             'Content-Type': 'application/json',
         }, data=payload, timeout=10)
         if st not in (200, 201):
-            log.warning('HA push HTTP %d', st)
+            log.warning('HA push %s HTTP %d', entity_id, st)
             return False
         return True
     except error.HTTPError as e:
-        log.warning('HA push HTTP %d: %s', e.code, e.read().decode('utf-8', errors='replace')[:200])
+        log.warning('HA push %s HTTP %d: %s', entity_id, e.code, e.read().decode('utf-8', errors='replace')[:200])
     except Exception as e:
-        log.warning('HA push failed: %s', e)
+        log.warning('HA push %s failed: %s', entity_id, e)
     return False
+
+def _is_order_active(attrs):
+    """True if there's a live order, OR an order that just transitioned to
+    terminal less than TERMINAL_GRACE_SECONDS ago (so the UI shows the result)."""
+    if not attrs:
+        return False
+    if attrs.get('isActive'):
+        return True
+    if attrs.get('isTerminal'):
+        # Prefer terminalSince (timestamp of the terminal transition in order
+        # history) over fetchedAt (each refetch resets), so the grace window is
+        # anchored to when the order ACTUALLY went terminal.
+        anchor = attrs.get('terminalSince') or attrs.get('fetchedAt')
+        if not anchor:
+            return False
+        try:
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(anchor)).total_seconds()
+            return age < TERMINAL_GRACE_SECONDS
+        except (ValueError, TypeError):
+            return False
+    return False
+
+def push_to_ha(state_value, attributes):
+    """Push to BOTH sensor.justeat_tracking AND binary_sensor.justeat_order_active."""
+    attrs = dict(attributes or {})
+    attrs['lastPushAt'] = datetime.now(timezone.utc).isoformat()
+    attrs.setdefault('friendly_name', 'Just Eat tracking')
+    attrs.setdefault('icon', 'mdi:moped')
+
+    ok = _post_state(SENSOR_ID, state_value, attrs)
+
+    if BINARY_SENSOR_ID:
+        active = _is_order_active(attrs)
+        # Binary sensors in HA REST API: state must be literally 'on' or 'off'.
+        bin_attrs = {
+            'friendly_name': 'Just Eat order active',
+            'icon': 'mdi:moped' if active else 'mdi:moped-off',
+            'device_class': 'occupancy',
+            # Helpful pass-through for templating without indirection:
+            'status': attrs.get('status'),
+            'statusLabel': attrs.get('statusLabel'),
+            'restaurant': attrs.get('restaurant'),
+            'orderId': attrs.get('orderId'),
+            'dueDate': attrs.get('dueDate'),
+            'isTerminal': attrs.get('isTerminal'),
+            'lastPushAt': attrs['lastPushAt'],
+        }
+        _post_state(BINARY_SENSOR_ID, 'on' if active else 'off', bin_attrs)
+
+    return ok
 
 
 # ── Main loop ──
